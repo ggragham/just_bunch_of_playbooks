@@ -1,0 +1,28 @@
+---
+- name: Set desired flatpak config vars
+  set_fact:
+    flatpak_repo_name: flathub
+
+- name: Check flatpak existence
+  command: flatpak --version
+  ignore_errors: true
+  register: flatpak_existence
+
+- name: Check flathub repo existence
+  shell: flatpak remote-list | grep "flathub" | awk '{print $1}'
+  ignore_errors: true
+  register: flathub_existence
+
+- name: Install flatpak to Ubuntu
+  apt:
+    name: flatpak
+    state: latest
+    update_cache: true
+  when: ansible_distribution=="Ubuntu" and flatpak_existence.failed
+
+- name: Add flathub repo
+  shell:
+    cmd: |
+      flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+      flatpak remote-modify --enable flathub
+  when: flatpak_repo_name not in flathub_existence.stdout

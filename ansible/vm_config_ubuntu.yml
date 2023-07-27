@@ -1,0 +1,153 @@
+---
+- name: Config Ubuntu for VM
+  hosts: localhost
+  become: true
+
+  vars:
+    user: '{{ ansible_env.SUDO_USER }}'
+
+  tasks:
+    - name: Config Ubuntu
+      block:
+        - name: Remove snap shit
+          block:
+            - name: Get snap shit pkgs list
+              shell: snap list --all | awk 'NR>1 {print $1}'
+              register: shit_snap_pkgs
+
+            - name: Try to remove all snap shit pkgs
+              snap:
+                name: '{{ item }}'
+                state: absent
+              loop: '{{ shit_snap_pkgs.stdout_lines }}'
+              ignore_errors: true
+
+            - name: Get remaining snap shit pkgs list
+              shell: snap list --all | awk 'NR>1 {print $1}'
+              register: remaining_shit_snap_pkgs
+
+            - name: Force remove remaining snap shit pkgs
+              snap:
+                name: '{{ item }}'
+                state: absent
+              loop: '{{ remaining_shit_snap_pkgs.stdout_lines }}'
+
+            - name: Get snap shit services list
+              shell: systemctl list-units 'snap.*' --no-legend --plain --all | awk '{print $1}'
+              register: snap_services_output
+
+            - name: Stop all shitty snap services
+              systemd:
+                name: '{{ item }}'
+                state: stopped
+              loop: '{{ snap_services_output.stdout_lines }}'
+
+            - name: Remove shitty snap dirs
+              file:
+                path: '{{ item }}'
+                state: absent
+              with_items:
+                - /var/cache/snapd/
+                - /var/snap/
+                - /root/snap/
+                - /snap/
+                - /home/{{ user }}/snap/
+
+            - name: Remove snap shit
+              apt:
+                name:
+                  - snapd
+                  - gnome-software-plugin-snap
+                state: absent
+                autoremove: true
+                purge: true
+
+        - name: Remove other unwanted pkgs
+          block:
+            - name: Remove unwanted apt pkgs
+              apt:
+                name:
+                  - bluez
+                  - bluez-obexd
+                  - cups*
+                  - fwupd*
+                  - gamemode
+                  - gnome-calculator
+                  - gnome-characters
+                  - gnome-font-viewer
+                  - gnome-logs
+                  - gnome-power-manager
+                  - gnome-software
+                  - gnome-startup-applications
+                  - gnome-user-docs
+                  - hplip
+                  - lpr
+                  - memtest86+
+                  - mobile-broadband-provider-info
+                  - nano
+                  - ntfs-3g
+                  - orca
+                  - seahorse
+                  - software-properties
+                  - telnet
+                  - ubuntu-advantage-desktop-daemon
+                  - update-manager
+                  - wireless-tools
+                  - wpasupplicant
+                  - yelp
+                  - zenity
+                state: absent
+                autoremove: true
+                purge: true
+
+            - name: Cleanup unremoved dirs
+              file:
+                path: '{{ item }}'
+                state: absent
+              with_items:
+                - /usr/share/hplip
+                - /etc/cups
+                - /etc/sgml
+                - /etc/xml
+
+            - name: Get rid of annoying Ubuntu Pro ads
+              file:
+                path: /etc/apt/apt.conf.d/20apt-esm-hook.conf
+                state: absent
+
+        - name: Delete swap
+          block:
+            - name: Get swapfile name
+              command: swapon --show=NAME --noheadings
+              register: swapfile_name
+
+            - name: Disable swap
+              command: swapoff -a
+              ignore_errors: true
+
+            - name: Remove swapfile from /etc/fstab
+              mount:
+                path: none
+                src: '{{ swapfile_name.stdout }}'
+                fstype: swap
+                state: absent
+
+            - name: Delete swapfile
+              file:
+                path: '{{ swapfile_name.stdout }}'
+                state: absent
+
+        - name: Install required packages
+          apt:
+            name:
+              - baobab
+              - spice-webdavd
+              - vim
+            state: latest
+            update_cache: true
+            install_recommends: false
+
+        - name: Install flatpak
+          include_tasks: _install_flatpak.yml
+
+      when: ansible_distribution=="Ubuntu"
